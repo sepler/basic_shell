@@ -27,7 +27,6 @@ void input_loop();
 void parse_line(char*);
 
 int main(int argc, char* argv[]) {
-    
     if (argc == 2) {
         FILE* fp;
         char* line = NULL;
@@ -37,6 +36,7 @@ int main(int argc, char* argv[]) {
             exit(1);
         }
         while ((len = getline(&line, &BUFFER_LENGTH, fp)) != -1) {
+            line[strcspn(line, "\n")] = 0; //trim trailing newline if it exists
             if (DEBUG) {
                 printf("read line from file: %s\n", line);
             }
@@ -56,7 +56,7 @@ int main(int argc, char* argv[]) {
         printf("curr dir: %s\n", CURRENT_DIR);
     }
 
-    //input_loop();
+    input_loop();
 }
 
 void input_loop() {
