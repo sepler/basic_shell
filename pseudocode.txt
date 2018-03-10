@@ -1,0 +1,94 @@
+Stephen Epler
+CIS3207 lab 2 - Shell: Psuedocode
+
+EXECUTION OF MAIN BINARY:
+	1. Perform check for arguments
+		if (args == 1)
+			User supplied a file
+		a. Check if its a real file by attempting to read
+		b. If legit, parse file line by line, store each line in a char** arr.
+	2. Set init global variables
+		a. CURRENT_DIRECTORY
+		b. PATH_TO_SHELL_EXECUTABLE
+		c. SHELL_NAME
+		d. enum of built-in commands (dir, exit, etc)
+	3. If input file successfully supplied, loop through indices, supplying each line to LINE_PARSER() func.
+	4. Begin main input loop.
+
+MAIN INPUT LOOP:
+	1. while(1)
+	2. printf(CURRENT_DIRECTORY + "/" +SHELL_NAME + ">")
+	3. getline() user input and store in input string
+	4. Insure input string is not empty chars, if not send line to LINE_PARSER()
+	5. loop
+	
+LINE_PARSER(user_line):
+	1. Call TOKENIZE(user_line, ' ') on user submitted line
+		a. Returns char** arr of original line, deliminated by white space
+	2. Read first token
+		a. SWITCH(token[0])
+			case (cd)
+				Handle directory switch
+				use opendir(), check for err
+				change appropriate variables
+			case (clr)
+				system("clear")
+			case (dir)
+				List directory contents
+				if arg, check if dir exists, then list
+			case (environ)
+				display env variables
+			case (echo)
+				printf on newline whatever remaining tokens are
+			case (help)
+				display verbose help page
+			case (quit)
+				exit(0)
+		b. Return 0 on success, -1 otherwise
+	2. Assume User wishes to exec a binary file
+		a. Check if token[0] indicates a path (/, ../)
+			Build path to bin using current path or ignore if starts with '/' (root dir). update token[0] with full path
+		b. Check if bin exists using fopen(), if not check env variables
+			Get PATH variable, TOKENIZE(PATH, ';').
+			Check each path for bin, if found, fix token[0] to reflect full path
+		c. If bin still cannot be found, return an error.
+	3. Send updated token array to CREATE_PROCESS(tokens)
+	
+TOKENIZER(STR, DELIM):
+	1. malloc dynamic char** array
+	2. use strsep to split based on DELIM
+	3. remalloc array when necessary
+	4. return new char** array or NULL on err
+
+CREATE_PROCESS(TOKENS):
+	1. Create structs to represent I/O params
+		stdin {
+			true: 0,
+			src/dest: null
+		}
+		stdout, pipe, background
+	2. Iterate thru TOKENS array looking for specific characters <, >, >>, |, &.
+		a. Set appropriate struct booleans, and update appropriate properties
+	3. fork()
+	4. On parents process, wait() if background boolean is true, if not return 0.
+	5. On Child
+		a. Multiple if() statements for each params
+			stdin
+				newstdin = open(token after <)
+				close(0)
+				dup(newstdin)
+				close(newstdin)
+			stdout
+				newstdout = open(token after >)
+				close(1)
+				dup(newstdout)
+				close(newstdout)
+			pipe
+				create the pipe
+				fork() again for the output of the pipe
+					on orig child: redirect stdout to the pipe write
+						exec program before '|'
+					on sub child: redirect stdin to the pipe read
+						exec program after '|'
+		b. If pipe was no one of the params:
+			perform exec(first token, array of tokens)
