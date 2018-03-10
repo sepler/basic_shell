@@ -4,9 +4,9 @@
 #include <unistd.h>
 #include <errno.h>
 
-#define BUFFER_LENGTH 128
 #define DEBUG 1
 
+size_t BUFFER_LENGTH = 128;
 long PATH_MAX;
 char* CURRENT_PATH;
 char CURRENT_DIR[64];
@@ -24,12 +24,30 @@ enum builtin_cmds {
 
 void update_directory_vars();
 void input_loop();
+void parse_line(char*);
 
 int main(int argc, char* argv[]) {
-    if (argc == 1) {
-        // User supplied a file
+    
+    if (argc == 2) {
+        FILE* fp;
+        char* line = NULL;
+        size_t len = 0;
+        if ((fp = fopen(argv[1], "r")) == NULL) {
+            printf("could not read supplied file\n");
+            exit(1);
+        }
+        while ((len = getline(&line, &BUFFER_LENGTH, fp)) != -1) {
+            if (DEBUG) {
+                printf("read line from file: %s\n", line);
+            }
+            parse_line(line);
+        }
+        fclose(fp);
+        if (line)
+            free(line);
     }
 
+    update_directory_vars();
 
     if(DEBUG) {
         printf("Initial vars:\n");
@@ -38,6 +56,17 @@ int main(int argc, char* argv[]) {
         printf("curr dir: %s\n", CURRENT_DIR);
     }
 
+    //input_loop();
+}
+
+void input_loop() {
+
+}
+
+void parse_line(char* line) {
+    if (DEBUG) {
+        printf("parsing line: %s\n", line);
+    }
 }
 
 void update_directory_vars() {
