@@ -1,10 +1,12 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
 #include <errno.h>
 #include <ctype.h>
 #include <dirent.h>
+#include <sys/wait.h>
+#include <unistd.h>
+#include <fcntl.h>
 
 #define DEBUG 1
 
@@ -46,7 +48,14 @@ void create_process(token_vector);
 int main(int argc, char* argv[]) {
     update_directory_vars();
 
-    PATHS = tokenize(getenv("PATH"), ":");
+    // Tokenize trashes original string, so lets copy PATH from sys mem instead
+    char* tmp_path;
+    int tmp_path_len = strlen(getenv("PATH"));
+    tmp_path = malloc(sizeof(char) * tmp_path_len);
+    printf("dd");
+    strncpy(tmp_path, getenv("PATH"), tmp_path_len);
+
+    PATHS = tokenize(tmp_path, ":");
 
     if (argc == 2) {
         FILE* fp;
@@ -163,8 +172,10 @@ void parse_line(char* line) {
                 if (DEBUG)
                     printf("path: %s\n", buf);
                 if (access(buf, F_OK) != -1) {
+                    printf("path found!\n");
                     success = 1;
                     tokens.arr[0] = buf;
+                    printf("dopgggg\n");
                     create_process(tokens);
                     break;
                 }
@@ -178,8 +189,8 @@ void parse_line(char* line) {
 }
 
 void create_process(token_vector tokens) {
-    printf("LAUNCHING PROCESS %s", tokens.arr[0]);
-
+    printf("dopgggg\n");
+    printf("LAUNCHING PROCESS %s\n", tokens.arr[0]);
     struct Stdin p_stdin = {.true = 0};
     struct Stdout p_stdout = {.true = 0, .overwrite = 1};
     struct Pipe p_pipe = {.true = 0};
@@ -187,6 +198,7 @@ void create_process(token_vector tokens) {
     
     int i;
     for (i = 0; i < tokens.length; i++) {
+        printf("%s\n",tokens.arr[i]);
         if (strcmp(tokens.arr[i], "<") == 0) {
             p_stdin.true = 1;
             if (i-1 < 0) {
@@ -205,7 +217,7 @@ void create_process(token_vector tokens) {
             p_stdout.true = 1;
             p_stdout.overwrite = 0;
             if (i+1 >= tokens.length) {
-                printf("err: invalid > params\n");
+                printf("err: invalid >> params\n");
                 return;
             }
             strncpy(p_stdout.dest, tokens.arr[i+1], strlen(tokens.arr[i+1]));
@@ -221,6 +233,56 @@ void create_process(token_vector tokens) {
     }
     if (strcmp(tokens.arr[tokens.length-1], "&") == 0) {
         p_background = 1;
+    }
+
+    if (DEBUG) {
+        printf("forking\n");
+    }
+    
+    if (fork() == 0) {
+        // Child
+        if (p_stdin.true) {
+            int new_in = open(p_stdin.src, O_RDONLY);
+            close(0);
+            dup2(new_in, STDIN_FILENO);
+            close(new_in);
+        }
+        if (p_stdout.true) {
+            int new_out = open(p_stdout.dest, O_WRONLY|O_CREAT,S_IRWXU|S_IRWXG|S_IRWXO);
+            close(1);
+            dup2(new_out, STDOUT_FILENO);
+            close(new_out);
+        }
+        if (p_pipe.true) {
+            int thePipe[2];
+            pipe(thePipe);
+            if (fork() > 0) {
+                // Parent
+                close(1);
+                dup(thePipe[1]);
+                close(thePipe[0]);
+                close(thePipe[1]);
+                execv(p_pipe.src, tokens.arr);
+            } else {
+                // Child
+                close(0);
+                dup(thePipe[0]);
+                close(thePipe[0]);
+                close(thePipe[1]);
+                execv(tokens.arr[0], tokens.arr);
+            }
+        } else {
+            execv(tokens.arr[0], tokens.arr);
+        }
+    } else {
+        // Parent
+        int status = 0;
+        if (p_background) {
+            wait(&status);
+        }
+        if (DEBUG) {
+            printf("Exited w status code: %d\n", status);
+        }
     }
 }
 
@@ -240,6 +302,11 @@ token_vector tokenize(char* line, char* token) {
         v.arr[i++] = p;
         p = strtok(NULL, token);
     }
+    if (realloc(v.arr, sizeof(char*) * v.length+1) == NULL) {
+        printf("could not realloc mem during tokenize\n");
+        exit(2);
+    }
+    v.arr[i] = NULL;
     return v;
 }
 
