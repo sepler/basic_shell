@@ -197,7 +197,8 @@ void create_process(token_vector tokens) {
     int trunc_pos = 256;
     int i;
     for (i = 0; i < tokens.length; i++) {
-        printf("%s\n",tokens.arr[i]);
+        if (DEBUG)
+            printf("%s\n",tokens.arr[i]);
         if (strcmp(tokens.arr[i], "<") == 0) {
             if (i < trunc_pos)
                 trunc_pos = i;
@@ -267,7 +268,12 @@ void create_process(token_vector tokens) {
             close(new_in);
         }
         if (p_stdout.true) {
-            int new_out = open(p_stdout.dest, O_WRONLY|O_CREAT,S_IRWXU|S_IRWXG|S_IRWXO);
+            int new_out;
+            if (p_stdout.overwrite) {
+                new_out = open(p_stdout.dest, O_WRONLY|O_CREAT|O_TRUNC,S_IRWXU|S_IRWXG|S_IRWXO);
+            } else {
+                new_out = open(p_stdout.dest, O_WRONLY|O_CREAT|O_APPEND,S_IRWXU|S_IRWXG|S_IRWXO);
+            }
             dup2(new_out, STDOUT_FILENO);
             close(new_out);
         }
@@ -283,26 +289,22 @@ void create_process(token_vector tokens) {
                 char** tmp = malloc(sizeof(char*) * 2);
                 tmp[0] = p_pipe.src;
                 tmp[1] = NULL;
-                close(1);
                 dup2(thePipe[1], 1);
                 close(thePipe[0]);
-                //execl(p_pipe.src, p_pipe.src, NULL);
-                execv(p_pipe.src, tmp);
+                execvp(p_pipe.src, tmp);
             } else {
                 // Parent
                 // READER
                 char** tmp = malloc(sizeof(char*) * 2);
                 tmp[0] = p_pipe.dest;
                 tmp[1] = NULL;
-                close(0);
                 dup2(thePipe[0], 0);
                 close(thePipe[1]);
-                //execl(p_pipe.dest, p_pipe.dest, NULL);
-                execv(p_pipe.dest, tmp);
+                execvp(p_pipe.dest, tmp);
             }
         } else {
             tokens.arr[trunc_pos] = NULL;
-            execv(tokens.arr[0], tokens.arr);
+            execvp(tokens.arr[0], tokens.arr);
         }
     } else {
         // Parent
