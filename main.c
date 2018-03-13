@@ -172,10 +172,8 @@ void parse_line(char* line) {
                 if (DEBUG)
                     printf("path: %s\n", buf);
                 if (access(buf, F_OK) != -1) {
-                    printf("path found!\n");
                     success = 1;
                     tokens.arr[0] = buf;
-                    printf("dopgggg\n");
                     create_process(tokens);
                     break;
                 }
@@ -189,51 +187,73 @@ void parse_line(char* line) {
 }
 
 void create_process(token_vector tokens) {
-    printf("dopgggg\n");
-    printf("LAUNCHING PROCESS %s\n", tokens.arr[0]);
+    if (DEBUG)
+        printf("LAUNCHING PROCESS %s\n", tokens.arr[0]);
     struct Stdin p_stdin = {.true = 0};
     struct Stdout p_stdout = {.true = 0, .overwrite = 1};
     struct Pipe p_pipe = {.true = 0};
     int p_background = 0;
     
+    int trunc_pos = 256;
     int i;
     for (i = 0; i < tokens.length; i++) {
         printf("%s\n",tokens.arr[i]);
         if (strcmp(tokens.arr[i], "<") == 0) {
+            if (i < trunc_pos)
+                trunc_pos = i;
             p_stdin.true = 1;
-            if (i-1 < 0) {
+            if (i+1 >= tokens.length) {
                 printf("err: invalid < params\n");
                 return;
             }
-            strncpy(p_stdin.src, tokens.arr[i-1], strlen(tokens.arr[i-1]));
+            int len = strlen(tokens.arr[i+1]);
+            p_stdin.src = malloc(sizeof(char) * len);
+            strncpy(p_stdin.src, tokens.arr[i+1], len);
         } else if (strcmp(tokens.arr[i], ">") == 0) {
+            if (i < trunc_pos)
+                trunc_pos = i;
             p_stdout.true = 1;
             if (i+1 >= tokens.length) {
                 printf("err: invalid > params\n");
                 return;
             }
-            strncpy(p_stdout.dest, tokens.arr[i+1], strlen(tokens.arr[i+1]));
+            int len = strlen(tokens.arr[i+1]);
+            p_stdout.dest = malloc(sizeof(char) * len);
+            strncpy(p_stdout.dest, tokens.arr[i+1], len);
         } else if (strcmp(tokens.arr[i], ">>") == 0) {
+            if (i < trunc_pos)
+                trunc_pos = i;
             p_stdout.true = 1;
             p_stdout.overwrite = 0;
             if (i+1 >= tokens.length) {
                 printf("err: invalid >> params\n");
                 return;
             }
-            strncpy(p_stdout.dest, tokens.arr[i+1], strlen(tokens.arr[i+1]));
+            int len = strlen(tokens.arr[i+1]);
+            p_stdout.dest = malloc(sizeof(char) * len);
+            strncpy(p_stdout.dest, tokens.arr[i+1], len);
         } else if (strcmp(tokens.arr[i], "|") == 0) {
+            if (i < trunc_pos)
+                trunc_pos = i-1;
             p_pipe.true = 1;
             if (i+1 >= tokens.length || i-1 < 0) {
                 printf("err: invalid | params\n");
                 return;
             }
-            strncpy(p_pipe.src, tokens.arr[i-1], strlen(tokens.arr[i-1]));
-            strncpy(p_pipe.dest, tokens.arr[i+1], strlen(tokens.arr[i+1]));
+            int len = strlen(tokens.arr[i-1]);
+            p_pipe.src = malloc(sizeof(char) * len);
+            strncpy(p_pipe.src, tokens.arr[i-1], len);
+            len = strlen(tokens.arr[i+1]);
+            p_pipe.dest = malloc(sizeof(char) * len);
+            strncpy(p_pipe.dest, tokens.arr[i+1], len);
         }
     }
     if (strcmp(tokens.arr[tokens.length-1], "&") == 0) {
+        if (tokens.length-1 < trunc_pos)
+            trunc_pos = tokens.length-1;
         p_background = 1;
     }
+
 
     if (DEBUG) {
         printf("forking\n");
@@ -243,41 +263,51 @@ void create_process(token_vector tokens) {
         // Child
         if (p_stdin.true) {
             int new_in = open(p_stdin.src, O_RDONLY);
-            close(0);
             dup2(new_in, STDIN_FILENO);
             close(new_in);
         }
         if (p_stdout.true) {
             int new_out = open(p_stdout.dest, O_WRONLY|O_CREAT,S_IRWXU|S_IRWXG|S_IRWXO);
-            close(1);
             dup2(new_out, STDOUT_FILENO);
             close(new_out);
         }
         if (p_pipe.true) {
             int thePipe[2];
-            pipe(thePipe);
-            if (fork() > 0) {
-                // Parent
-                close(1);
-                dup(thePipe[1]);
-                close(thePipe[0]);
-                close(thePipe[1]);
-                execv(p_pipe.src, tokens.arr);
-            } else {
+            if (pipe(thePipe) == -1) {
+                printf("err: pipe creation\n");
+                return;
+            }
+            if (fork() == 0) {
                 // Child
-                close(0);
-                dup(thePipe[0]);
+                // WRITER
+                char** tmp = malloc(sizeof(char*) * 2);
+                tmp[0] = p_pipe.src;
+                tmp[1] = NULL;
+                close(1);
+                dup2(thePipe[1], 1);
                 close(thePipe[0]);
+                //execl(p_pipe.src, p_pipe.src, NULL);
+                execv(p_pipe.src, tmp);
+            } else {
+                // Parent
+                // READER
+                char** tmp = malloc(sizeof(char*) * 2);
+                tmp[0] = p_pipe.dest;
+                tmp[1] = NULL;
+                close(0);
+                dup2(thePipe[0], 0);
                 close(thePipe[1]);
-                execv(tokens.arr[0], tokens.arr);
+                //execl(p_pipe.dest, p_pipe.dest, NULL);
+                execv(p_pipe.dest, tmp);
             }
         } else {
+            tokens.arr[trunc_pos] = NULL;
             execv(tokens.arr[0], tokens.arr);
         }
     } else {
         // Parent
         int status = 0;
-        if (p_background) {
+        if (!p_background) {
             wait(&status);
         }
         if (DEBUG) {

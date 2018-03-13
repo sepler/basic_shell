@@ -1,0 +1,13 @@
+a.out
+dog.c
+input.txt
+main.c
+o.txt
+output.exe
+output.txt
+out.txt
+pseudocode.txt
+reader
+reader.c
+writer
+writer.c
