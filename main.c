@@ -37,6 +37,7 @@ struct Pipe {
     int true;
     char* src;
     char* dest;
+    int index;
 };
 
 void update_directory_vars();
@@ -52,7 +53,6 @@ int main(int argc, char* argv[]) {
     char* tmp_path;
     int tmp_path_len = strlen(getenv("PATH"));
     tmp_path = malloc(sizeof(char) * tmp_path_len);
-    printf("dd");
     strncpy(tmp_path, getenv("PATH"), tmp_path_len);
 
     PATHS = tokenize(tmp_path, ":");
@@ -133,28 +133,93 @@ void parse_line(char* line) {
     } else if (strcmp(tokens.arr[0], "dir") == 0) {
         DIR *d;
         struct dirent *dir;
-        if (tokens.length > 1) {
+        if (tokens.length > 1 && strcmp(tokens.arr[1], ">") != 0 && strcmp(tokens.arr[1], ">>") != 0) {
             d = opendir(tokens.arr[1]);
         } else {
             d = opendir(".");
         }
         if (d) {
+            int saved_stdout = dup(STDOUT_FILENO);
+            int new_out = -1;
+            if (tokens.length > 1) {
+                if (strcmp(tokens.arr[1], ">") == 0) {
+                    new_out = open(tokens.arr[2], O_WRONLY|O_CREAT|O_TRUNC,S_IRWXU|S_IRWXG|S_IRWXO);
+                    dup2(new_out, STDOUT_FILENO);
+                    close(new_out);
+                } else if (strcmp(tokens.arr[1], ">>") == 0) {
+                    new_out = open(tokens.arr[2], O_WRONLY|O_CREAT|O_APPEND,S_IRWXU|S_IRWXG|S_IRWXO);
+                    dup2(new_out, STDOUT_FILENO);
+                    close(new_out);
+                }
+            }
             while ((dir = readdir(d)) != NULL) {
                 printf("%s\n", dir->d_name);
             }
             closedir(d);
+            if (new_out > 0) {
+                dup2(saved_stdout, STDOUT_FILENO);
+            }
         }
     } else if (strcmp(tokens.arr[0], "environ") == 0) {
+        int saved_stdout = dup(STDOUT_FILENO);
+        int new_out = -1;
+        if (tokens.length > 1) {
+            if (strcmp(tokens.arr[1], ">") == 0) {
+                new_out = open(tokens.arr[2], O_WRONLY|O_CREAT|O_TRUNC,S_IRWXU|S_IRWXG|S_IRWXO);
+                dup2(new_out, STDOUT_FILENO);
+                close(new_out);
+            } else if (strcmp(tokens.arr[1], ">>") == 0) {
+                new_out = open(tokens.arr[2], O_WRONLY|O_CREAT|O_APPEND,S_IRWXU|S_IRWXG|S_IRWXO);
+                dup2(new_out, STDOUT_FILENO);
+                close(new_out);
+            }
+        }
         for (char **env = environ; *env; env++)
             printf("%s\n", *env);
+        if (new_out > 0) {
+            dup2(saved_stdout, STDOUT_FILENO);
+        }
     } else if (strcmp(tokens.arr[0], "echo") == 0) {
+        int saved_stdout = dup(STDOUT_FILENO);
+        int new_out = -1;
+        if (tokens.length > 1) {
+            if (strcmp(tokens.arr[1], ">") == 0) {
+                new_out = open(tokens.arr[2], O_WRONLY|O_CREAT|O_TRUNC,S_IRWXU|S_IRWXG|S_IRWXO);
+                dup2(new_out, STDOUT_FILENO);
+                close(new_out);
+            } else if (strcmp(tokens.arr[1], ">>") == 0) {
+                new_out = open(tokens.arr[2], O_WRONLY|O_CREAT|O_APPEND,S_IRWXU|S_IRWXG|S_IRWXO);
+                dup2(new_out, STDOUT_FILENO);
+                close(new_out);
+            }
+        }
         int i;
         for (i = 1; i < tokens.length; i++) {
             printf("%s ", tokens.arr[i]);
         }
         printf("\n");
+        if (new_out > 0) {
+            dup2(saved_stdout, STDOUT_FILENO);
+        }
     } else if (strcmp(tokens.arr[0], "help") == 0) {
+        int saved_stdout = dup(STDOUT_FILENO);
+        int new_out = -1;
+        if (tokens.length > 1) {
+            printf("ass: %s\n", tokens.arr[2]);
+            if (strcmp(tokens.arr[1], ">") == 0) {
+                new_out = open(tokens.arr[2], O_WRONLY|O_CREAT|O_TRUNC,S_IRWXU|S_IRWXG|S_IRWXO);
+                dup2(new_out, STDOUT_FILENO);
+                close(new_out);
+            } else if (strcmp(tokens.arr[1], ">>") == 0) {
+                new_out = open(tokens.arr[2], O_WRONLY|O_CREAT|O_APPEND,S_IRWXU|S_IRWXG|S_IRWXO);
+                dup2(new_out, STDOUT_FILENO);
+                close(new_out);
+            }
+        }
         printf("todo: write help\n");
+        if (new_out > 0) {
+            dup2(saved_stdout, STDOUT_FILENO);
+        }
     } else if (strcmp(tokens.arr[0], "quit") == 0 || strcmp(tokens.arr[0], "q") == 0) {
         exit(0);
     } else {
@@ -210,6 +275,7 @@ void create_process(token_vector tokens) {
             int len = strlen(tokens.arr[i+1]);
             p_stdin.src = malloc(sizeof(char) * len);
             strncpy(p_stdin.src, tokens.arr[i+1], len);
+            printf("f: %s\n", p_stdin.src);
         } else if (strcmp(tokens.arr[i], ">") == 0) {
             if (i < trunc_pos)
                 trunc_pos = i;
@@ -237,6 +303,7 @@ void create_process(token_vector tokens) {
             if (i < trunc_pos)
                 trunc_pos = i-1;
             p_pipe.true = 1;
+            p_pipe.index = i;
             if (i+1 >= tokens.length || i-1 < 0) {
                 printf("err: invalid | params\n");
                 return;
@@ -263,21 +330,35 @@ void create_process(token_vector tokens) {
     if (fork() == 0) {
         // Child
         if (p_stdin.true) {
+            if (DEBUG)
+                printf("setting stdin: ;%s;\n", p_stdin.src);
             int new_in = open(p_stdin.src, O_RDONLY);
             dup2(new_in, STDIN_FILENO);
             close(new_in);
+            if (new_in < 0) {
+                perror("could not open new_in");
+            }
         }
         if (p_stdout.true) {
+            if (DEBUG)
+                printf("setting stdout\n");
+            
             int new_out;
             if (p_stdout.overwrite) {
                 new_out = open(p_stdout.dest, O_WRONLY|O_CREAT|O_TRUNC,S_IRWXU|S_IRWXG|S_IRWXO);
             } else {
                 new_out = open(p_stdout.dest, O_WRONLY|O_CREAT|O_APPEND,S_IRWXU|S_IRWXG|S_IRWXO);
             }
+            if (new_out < 0) {
+                perror("could not open new_out");
+            }
             dup2(new_out, STDOUT_FILENO);
             close(new_out);
         }
         if (p_pipe.true) {
+            if (DEBUG) {
+                printf("piping\n");
+            }
             int thePipe[2];
             if (pipe(thePipe) == -1) {
                 printf("err: pipe creation\n");
@@ -286,21 +367,27 @@ void create_process(token_vector tokens) {
             if (fork() == 0) {
                 // Child
                 // WRITER
-                char** tmp = malloc(sizeof(char*) * 2);
-                tmp[0] = p_pipe.src;
-                tmp[1] = NULL;
+                char** tmp = malloc(sizeof(char*) * (p_pipe.index + 2));
+                for (i = 0; i < p_pipe.index; i++) {
+                    tmp[i] = tokens.arr[i];
+                }
+                tmp[i] = NULL;
                 dup2(thePipe[1], 1);
                 close(thePipe[0]);
-                execvp(p_pipe.src, tmp);
+                execvp(tmp[0], tmp);
             } else {
                 // Parent
                 // READER
-                char** tmp = malloc(sizeof(char*) * 2);
-                tmp[0] = p_pipe.dest;
-                tmp[1] = NULL;
+                int j = (tokens.length - p_pipe.index);
+                char** tmp = malloc(sizeof(char*) * (j+1));
+                for (i = 0; j < tokens.length; j++) {
+                    tmp[i] = tokens.arr[j];
+                    i++;
+                }
+                tmp[i] = NULL;
                 dup2(thePipe[0], 0);
                 close(thePipe[1]);
-                execvp(p_pipe.dest, tmp);
+                execvp(tmp[0], tmp);
             }
         } else {
             tokens.arr[trunc_pos] = NULL;
@@ -351,6 +438,7 @@ void update_directory_vars() {
         else if (PATH_MAX > 10240)
             SHELL_PATH_MAX = 10240;
         CURRENT_PATH = malloc(sizeof(char) * SHELL_PATH_MAX);
+        initial = 0;
     }
     if (getcwd(CURRENT_PATH, SHELL_PATH_MAX) == NULL) {
         printf("Could not get curr directory path\n");
@@ -364,5 +452,4 @@ void update_directory_vars() {
     int len = strlen(token);
     memcpy(CURRENT_DIR, token+1, len);
 
-    initial = 0;
 }
